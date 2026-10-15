@@ -47,6 +47,57 @@ export const domainAcceptsMail = async (email) => {
   }
 }
 
+// ── Damerau-Levenshtein distance ──────────────────────────────────
+// Counts insertions, deletions, substitutions, and adjacent-character
+// transpositions as one edit each. The transposition case is what
+// matters here: plain Levenshtein scores "gmial" vs "gmail" as 2 (two
+// substitutions), which misses it at a threshold of 1 — this scores
+// the same swap as 1, since it's a single transposed pair.
+const editDistance = (a, b) => {
+  const d = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0))
+  for (let i = 0; i <= a.length; i++) d[i][0] = i
+  for (let j = 0; j <= b.length; j++) d[0][j] = j
+
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1
+      d[i][j] = Math.min(
+        d[i - 1][j] + 1,       // deletion
+        d[i][j - 1] + 1,       // insertion
+        d[i - 1][j - 1] + cost, // substitution
+      )
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1) // transposition
+      }
+    }
+  }
+  return d[a.length][b.length]
+}
+
+// Providers typo-squatters most often register look-alike domains
+// for — those domains frequently DO have real MX records (set up
+// deliberately to catch misdirected mail), so domainAcceptsMail alone
+// lets them through. This catches the near-miss before that check runs.
+const COMMON_EMAIL_DOMAINS = [
+  'gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'icloud.com',
+  'aol.com', 'live.com', 'msn.com', 'protonmail.com', 'yandex.com',
+]
+
+// ── Catch a one-edit typo of a well-known provider ────────────────
+// Returns the likely-intended domain (e.g. "gmail.com") if the
+// submitted domain is a single edit away from one, or null if it's
+// an exact match or not close to any of them.
+export const findDomainTypo = (email) => {
+  const domain = email.split('@')[1]?.toLowerCase()
+  if (!domain) return null
+  if (COMMON_EMAIL_DOMAINS.includes(domain)) return null
+
+  for (const known of COMMON_EMAIL_DOMAINS) {
+    if (editDistance(domain, known) === 1) return known
+  }
+  return null
+}
+
 // ── Send the password-reset email ───────────────────────────────
 // Called by forgotPassword in auth.controller.js. resetUrl already
 // contains the raw (unhashed) token as a query param.
