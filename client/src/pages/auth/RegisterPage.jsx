@@ -6,6 +6,11 @@ import logo from '../../assets/logo.jpg'
 import toast from 'react-hot-toast'
 import ThemeToggle from '../../components/ThemeToggle'
 
+// Same pattern the server validates against (User.model.js) — checked
+// here too so a malformed email is caught instantly, not after a round
+// trip to the server.
+const EMAIL_PATTERN = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
+
 export default function RegisterPage() {
   const { register, teacherRegister } = useAuth()
   const navigate      = useNavigate()
@@ -38,6 +43,9 @@ export default function RegisterPage() {
 
   const handleTeacherSubmit = async (e) => {
     e.preventDefault()
+    if (!EMAIL_PATTERN.test(teacherForm.email)) {
+      return setError('Please enter a valid email address')
+    }
     if (teacherForm.password.length < 6) {
       return setError('Password must be at least 6 characters')
     }
@@ -66,6 +74,9 @@ export default function RegisterPage() {
     e.preventDefault()
     if (!form.fullName || !form.email || !form.password || !form.confirmPassword) {
       return setError('Please fill in all required fields')
+    }
+    if (!EMAIL_PATTERN.test(form.email)) {
+      return setError('Please enter a valid email address')
     }
     if (form.password.length < 6) {
       return setError('Password must be at least 6 characters')
