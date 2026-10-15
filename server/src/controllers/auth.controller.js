@@ -1,7 +1,7 @@
 import crypto from 'crypto'
 import User from '../models/User.model.js'
 import { generateToken } from '../utils/jwt.js'
-import { sendPasswordResetEmail } from '../utils/email.utils.js'
+import { sendPasswordResetEmail, domainAcceptsMail } from '../utils/email.utils.js'
 import { asyncHandler, AppError } from '../middleware/error.middleware.js'
 
 // ── POST /api/auth/register ────────────────────────────────────
@@ -11,6 +11,12 @@ export const register = asyncHandler(async (req, res) => {
   // 1. Check if email already registered
   const existing = await User.findOne({ email })
   if (existing) throw new AppError('Email already registered.', 409)
+
+  // 1b. Confirm the domain can actually receive mail — password reset
+  // depends on it later, so reject typo/fake domains up front.
+  if (!(await domainAcceptsMail(email))) {
+    throw new AppError("We couldn't verify that email's domain. Please check for typos.", 400)
+  }
 
   // 2. Create the user (password is hashed automatically by the model)
   const user = await User.create({
@@ -139,6 +145,10 @@ export const adminRegister = asyncHandler(async (req, res) => {
   const existing = await User.findOne({ email })
   if (existing) throw new AppError('Email already registered.', 409)
 
+  if (!(await domainAcceptsMail(email))) {
+    throw new AppError("We couldn't verify that email's domain. Please check for typos.", 400)
+  }
+
   const user = await User.create({
     fullName,
     email,
@@ -264,6 +274,10 @@ export const teacherRegister = asyncHandler(async (req, res) => {
 
   const existing = await User.findOne({ email })
   if (existing) throw new AppError('Email already registered.', 409)
+
+  if (!(await domainAcceptsMail(email))) {
+    throw new AppError("We couldn't verify that email's domain. Please check for typos.", 400)
+  }
 
   const user = await User.create({
     fullName,
