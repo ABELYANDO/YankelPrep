@@ -110,7 +110,7 @@ export default function LoginPage() {
             >
               YankelPrep
             </span>
-            <p className="text-teal-200/70 text-xs">Practice. Understand. Succeed.</p>
+            <p className="text-teal-200/70 text-xs">Your Smart Path to Exam Success</p>
           </div>
         </div>
 
@@ -175,7 +175,7 @@ export default function LoginPage() {
               >
                 YankelPrep
               </span>
-              <p className="text-slate-400 text-xs">Practice. Understand. Succeed.</p>
+              <p className="text-slate-400 text-xs">Your Smart Path to Exam Success</p>
             </div>
           </div>
 
