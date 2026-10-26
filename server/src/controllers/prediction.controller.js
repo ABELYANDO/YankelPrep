@@ -20,7 +20,11 @@ const MATURE_YEARS = 5
 // Students are locked to their own exam type; admins can request either.
 export const getPredictions = asyncHandler(async (req, res) => {
   const { subject }  = req.params
-  const { forceRefresh = false } = req.query
+  // Query values are strings — the client sends forceRefresh=false on every
+  // normal page load, and the string 'false' is truthy, so a plain
+  // destructure made every visit regenerate (≈20 s and an AI call) instead
+  // of serving the cache. Only an explicit 'true' forces a refresh.
+  const forceRefresh = req.query.forceRefresh === 'true'
   const examType = resolveExamType(req, req.query.examType)
 
   // 1. Check cache first

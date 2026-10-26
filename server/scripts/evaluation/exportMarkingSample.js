@@ -29,6 +29,9 @@
 //   --seed        random seed, so the same sample can be re-drawn (default 2026)
 //   --subjects    comma-separated subject filter
 //   --examType    WASSCE or BECE filter
+//   --excludeEmails  regex of account emails to leave out (default: the
+//                 sample/evaluation accounts used for screenshots, whose
+//                 answers were written by the researcher, not students)
 
 import dotenv from 'dotenv'
 import { fileURLToPath } from 'url'
@@ -46,6 +49,7 @@ if (!MONGODB_URI) {
 }
 
 const { default: Question }             = await import('../../src/models/Question.model.js')
+const { default: User }                 = await import('../../src/models/User.model.js')
 const { default: Session }              = await import('../../src/models/Session.model.js')
 const { default: MockExam }             = await import('../../src/models/MockExam.model.js')
 const { default: AssignmentSubmission } = await import('../../src/models/AssignmentSubmission.model.js')
@@ -98,8 +102,14 @@ const run = async () => {
   await mongoose.connect(MONGODB_URI)
   const candidates = []
 
+  // Accounts whose work must never enter the evaluation sample.
+  const excludePattern = new RegExp(args.excludeEmails || 'yankelprep-eval|yankelprep-teacher', 'i')
+  const excludedIds = (await User.find({ email: excludePattern }).select('_id email').lean())
+  console.log(`Excluding ${excludedIds.length} account(s): ${excludedIds.map(u => u.email).join(', ') || 'none'}`)
+  const notExcluded = { $nin: excludedIds.map(u => u._id) }
+
   // ── Practice answers ─────────────────────────────────────────────
-  const sessions = await Session.find({ sessionType: 'practice', 'questions.type': 'Essay' })
+  const sessions = await Session.find({ sessionType: 'practice', 'questions.type': 'Essay', studentId: notExcluded })
     .select('subject examType questions').lean()
   const practiceAnswers = sessions.flatMap(s => s.questions
     .filter(q => q.type === 'Essay' && hasAnswer(q.studentAnswer) && isMark(q.marksAwarded) && q.marksAvailable > 0)
@@ -119,7 +129,7 @@ const run = async () => {
   }
 
   // ── Mock exam answers (Sections B and C) ─────────────────────────
-  const exams = await MockExam.find({ status: 'marked', isPhysicalEntry: { $ne: true } })
+  const exams = await MockExam.find({ status: 'marked', isPhysicalEntry: { $ne: true }, studentId: notExcluded })
     .select('subject examType sectionB sectionC').lean()
   for (const exam of exams) {
     const theory = [...exam.sectionB, ...exam.sectionC]
@@ -136,7 +146,7 @@ const run = async () => {
   }
 
   // ── Assignment answers ───────────────────────────────────────────
-  const submissions = await AssignmentSubmission.find({ status: 'marked' })
+  const submissions = await AssignmentSubmission.find({ status: 'marked', studentId: notExcluded })
     .populate('assignmentId', 'subject examType format questions').lean()
   for (const sub of submissions) {
     const assignment = sub.assignmentId

@@ -7,6 +7,47 @@ import { FileText, Clock, BookOpen, AlertTriangle } from 'lucide-react'
 export default function ExamCoverPage({ exam, onStart, isStarting }) {
   const year = exam.year || new Date().getFullYear()
 
+  // Describe the paper the student is actually about to sit. Papers differ
+  // by subject (e.g. BECE Science: 1 compulsory 40-mark Section B, answer
+  // 3 of 4 in Section C), so nothing here may be hardcoded to one layout.
+  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+  const sumMarks = (qs = []) => qs.reduce((s, q) => s + (q.marks || 0), 0)
+  const a = exam.sectionA || [], b = exam.sectionB || [], c = exam.sectionC || []
+  const cAnswer = exam.sectionCAnswerCount || 1
+  // Same convention as the exam screen: with no Section B, the essay
+  // section is presented to the student as "Section B".
+  const cLabel = b.length === 0 ? 'B' : 'C'
+  const sections = [
+    a.length > 0 && {
+      section: 'Section A', desc: 'Multiple Choice Questions',
+      detail:  `${plural(a.length, 'question')} · answer ALL · ${sumMarks(a)} marks`,
+      colour:  'bg-teal-50 border-teal-200 text-teal-800',
+    },
+    b.length > 0 && {
+      section: 'Section B', desc: b.length === 1 ? 'Structured Question' : 'Structured Questions',
+      detail:  `${plural(b.length, 'question')} · answer ALL · ${sumMarks(b)} marks`,
+      colour:  'bg-blue-50 border-blue-200 text-blue-800',
+    },
+    c.length > 0 && {
+      section: `Section ${cLabel}`, desc: cAnswer === 1 ? 'Essay Question' : 'Essay Questions',
+      detail:  `${plural(c.length, 'question')}, answer ${cAnswer === 1 ? 'ONE' : cAnswer} · ${(c[0]?.marks || 0) * cAnswer} marks`,
+      colour:  'bg-purple-50 border-purple-200 text-purple-800',
+    },
+  ].filter(Boolean)
+  const minutes = exam.timeAllowedMinutes || 160
+  const timeAllowed = [Math.floor(minutes / 60) && plural(Math.floor(minutes / 60), 'hour'), minutes % 60 && plural(minutes % 60, 'minute')]
+    .filter(Boolean).join(' ')
+  const instructions = [
+    a.length > 0 && 'Answer ALL questions in Section A.',
+    b.length > 0 && 'Answer ALL questions in Section B.',
+    c.length > 0 && (cAnswer >= c.length
+      ? `Answer ALL questions in Section ${cLabel}.`
+      : `Answer ${cAnswer === 1 ? 'ONE question only' : `any ${cAnswer} questions`} from Section ${cLabel}.`),
+    'All answers must be written clearly and legibly.',
+    'Marks will not be awarded for illegible responses.',
+    'This paper must not be taken out of the examination room.',
+  ].filter(Boolean)
+
   return (
     <div className="max-w-2xl mx-auto animate-fade-in">
 
@@ -40,7 +81,7 @@ export default function ExamCoverPage({ exam, onStart, isStarting }) {
                 <Clock className="w-5 h-5 text-teal-600" />
               </div>
               <p className="text-xs text-slate-500 mb-0.5">Time allowed</p>
-              <p className="font-semibold text-slate-800 text-sm">2 hours 40 minutes</p>
+              <p className="font-semibold text-slate-800 text-sm">{timeAllowed}</p>
             </div>
             <div>
               <div className="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center mx-auto mb-2">
@@ -54,7 +95,9 @@ export default function ExamCoverPage({ exam, onStart, isStarting }) {
                 <BookOpen className="w-5 h-5 text-purple-600" />
               </div>
               <p className="text-xs text-slate-500 mb-0.5">Sections</p>
-              <p className="font-semibold text-slate-800 text-sm">A · B · C</p>
+              <p className="font-semibold text-slate-800 text-sm">
+                {sections.map(s => s.section.replace('Section ', '')).join(' · ')}
+              </p>
             </div>
           </div>
         </div>
@@ -66,35 +109,12 @@ export default function ExamCoverPage({ exam, onStart, isStarting }) {
             Paper structure
           </h3>
           <div className="space-y-2.5">
-            {[
-              {
-                section: 'Section A',
-                desc:    'Multiple Choice Questions',
-                detail:  '40 questions · 1 mark each · 40 marks',
-                time:    '45 minutes',
-                colour:  'bg-teal-50 border-teal-200 text-teal-800',
-              },
-              {
-                section: 'Section B',
-                desc:    'Structured Questions',
-                detail:  '4 questions · 10 marks each · 40 marks',
-                time:    '60 minutes',
-                colour:  'bg-blue-50 border-blue-200 text-blue-800',
-              },
-              {
-                section: 'Section C',
-                desc:    'Essay Question',
-                detail:  '2 questions, answer ONE · 20 marks',
-                time:    '35 minutes',
-                colour:  'bg-purple-50 border-purple-200 text-purple-800',
-              },
-            ].map(({ section, desc, detail, time, colour }) => (
+            {sections.map(({ section, desc, detail, colour }) => (
               <div key={section} className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${colour}`}>
                 <div className="flex-1">
                   <p className="font-semibold text-sm">{section} — {desc}</p>
                   <p className="text-xs opacity-70 mt-0.5">{detail}</p>
                 </div>
-                <span className="text-xs font-medium opacity-60 flex-shrink-0">{time}</span>
               </div>
             ))}
           </div>
@@ -107,14 +127,7 @@ export default function ExamCoverPage({ exam, onStart, isStarting }) {
             Instructions to candidates
           </h3>
           <ul className="space-y-1.5">
-            {[
-              'Answer ALL questions in Section A.',
-              'Answer ALL questions in Section B.',
-              'Answer ONE question only from Section C.',
-              'All answers must be written clearly and legibly.',
-              'Marks will not be awarded for illegible responses.',
-              'This paper must not be taken out of the examination room.',
-            ].map(instruction => (
+            {instructions.map(instruction => (
               <li key={instruction} className="flex items-start gap-2 text-sm text-slate-600">
                 <span className="w-1.5 h-1.5 rounded-full bg-slate-400 mt-1.5 flex-shrink-0" />
                 {instruction}

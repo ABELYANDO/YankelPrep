@@ -1,6 +1,6 @@
 import Question from '../models/Question.model.js'
 import MasteryProfile from '../models/MasteryProfile.model.js'
-import { generateAIJSON } from './aiService.js'
+import { generateAIJSON, generateAIResponse } from './aiService.js'
 import { getCurriculumScope, formatScopeNote } from './curriculumGrounding.utils.js'
 
 // ── WAEC paper structure constants ─────────────────────────────
@@ -726,7 +726,12 @@ and the area most in need of improvement.
 Write as if this will appear on their official result report.`
 
   try {
-    return await generateAIJSON(prompt, systemPrompt)
+    // Plain-text call: the prompt asks for prose, not JSON. Routing it
+    // through generateAIJSON made the parse/repair step mangle the comment
+    // into a non-string, which submitExam then stored as ''.
+    const comment = (await generateAIResponse(prompt, systemPrompt)).trim()
+    if (comment) return comment
+    throw new Error('empty examiner comment')
   } catch {
     const grade =
       percent >= 75 ? 'excellent' :
