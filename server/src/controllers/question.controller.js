@@ -1,6 +1,14 @@
 import Question from '../models/Question.model.js'
 import { asyncHandler, AppError } from '../middleware/error.middleware.js'
 
+// Fields that reveal the answer to a question. Students only ever get a
+// question's answer through marking (practice submit / a marked mock
+// exam), never by reading the bank directly — otherwise any student
+// could look up a mock exam's answers by its questionId mid-exam.
+export const ANSWER_FIELDS = '-correctOption -modelAnswer -explanation -parts.answer'
+
+const isAdmin = (req) => req.user?.role === 'admin'
+
 // ── POST /api/questions ────────────────────────────────────────
 // Admin only — add a single question to the bank
 export const createQuestion = asyncHandler(async (req, res) => {
@@ -56,29 +64,33 @@ export const getQuestions = asyncHandler(async (req, res) => {
   if (difficulty) filter.difficulty = Number(difficulty)
   if (year)       filter.year       = Number(year)
 
-  const skip  = (Number(page) - 1) * Number(limit)
+  const pageSize = Math.min(Math.max(Number(limit) || 10, 1), 100)
+  const skip  = (Math.max(Number(page) || 1, 1) - 1) * pageSize
   const total = await Question.countDocuments(filter)
 
   const questions = await Question.find(filter)
     .sort({ year: -1, createdAt: -1 })
     .skip(skip)
-    .limit(Number(limit))
-    .select('-explanation -modelAnswer -imageData') // don't send answers or diagram data to client by default
+    .limit(pageSize)
+    .select(`${ANSWER_FIELDS} -imageData`) // never send answers or diagram data in listings
 
   res.json({
     success: true,
     count:   questions.length,
     total,
-    page:    Number(page),
-    pages:   Math.ceil(total / Number(limit)),
+    page:    Math.max(Number(page) || 1, 1),
+    pages:   Math.ceil(total / pageSize),
     questions,
   })
 })
 
 // ── GET /api/questions/:id ─────────────────────────────────────
-// Get a single question by ID (includes model answer for review)
+// Admins get the full question (answers included, active or not) for
+// editing. Everyone else gets only active questions, without answers.
 export const getQuestionById = asyncHandler(async (req, res) => {
-  const question = await Question.findById(req.params.id)
+  const question = isAdmin(req)
+    ? await Question.findById(req.params.id)
+    : await Question.findOne({ _id: req.params.id, isActive: true }).select(ANSWER_FIELDS)
   if (!question) throw new AppError('Question not found', 404)
 
   res.json({ success: true, question })
@@ -90,7 +102,8 @@ export const getQuestionById = asyncHandler(async (req, res) => {
 // stay light, and only loaded when a question flagged hasImage:true
 // is actually being displayed.
 export const getQuestionImage = asyncHandler(async (req, res) => {
-  const question = await Question.findById(req.params.id).select('imageData hasImage')
+  const filter = isAdmin(req) ? { _id: req.params.id } : { _id: req.params.id, isActive: true }
+  const question = await Question.findOne(filter).select('imageData hasImage')
   if (!question) throw new AppError('Question not found', 404)
 
   res.json({ success: true, hasImage: question.hasImage, imageData: question.imageData })

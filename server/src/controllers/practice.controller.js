@@ -15,6 +15,8 @@ import {
 import { asyncHandler, AppError } from '../middleware/error.middleware.js'
 import { resolveExamType } from '../utils/examType.utils.js'
 import { getCanonicalTopics } from '../data/beceCurriculum.js'
+import { ANSWER_FIELDS } from './question.controller.js'
+import { generateExplainToken, isValidExplainToken } from '../utils/jwt.js'
 
 // ── GET /api/practice/questions ────────────────────────────────
 // Fetches questions for a practice session.
@@ -67,7 +69,9 @@ export const getPracticeQuestions = asyncHandler(async (req, res) => {
   const questions = await Question.find(filter)
     .skip(skip)
     .limit(Number(limit))
-    .select('-explanation -imageData')   // don't send explanations or diagram data upfront — fetched lazily per-question when needed
+    // No answers (they come back from submitAnswer once marked) and no
+    // diagram data (fetched lazily per-question when needed).
+    .select(`${ANSWER_FIELDS} -imageData`)
     .lean()
 
   // ── Get mastery data for all topics returned ───────────────
@@ -377,9 +381,17 @@ export const submitAnswer = asyncHandler(async (req, res) => {
       // separately — see questionResultSchema in Session.model.js.
       wasScanned:    !!wasScanned,
       scannedFiles:  wasScanned ? scannedFiles : [],
+      // Echoed for the same reason: without these the saved Session has
+      // no record of what was answered or what kind of question it was
+      // (needed for reviewing marking quality), and the Explain button
+      // was sending an empty studentAnswer to the AI.
+      studentAnswer: typeof studentAnswer === 'string' ? studentAnswer : String(studentAnswer ?? ''),
+      type:          question.type,
+      difficulty:    question.difficulty,
       topic:         question.topic,
       subject:       question.subject,
       correctAnswer: question.type === 'MCQ' ? question.correctOption : null,
+      explainToken:  generateExplainToken(req.user._id, questionId),
       masteryUpdate: {
         topic:        question.topic,
         oldScore:     masteryState.score,
@@ -393,9 +405,15 @@ export const submitAnswer = asyncHandler(async (req, res) => {
 
 // ── POST /api/practice/explain ─────────────────────────────────
 // Student requests an AI explanation for a question they answered.
-// Called on demand — not automatically after every answer.
+// Called on demand — not automatically after every answer. Requires
+// the explainToken submitAnswer returned for this question, since an
+// explanation reveals the correct answer.
 export const getExplanation = asyncHandler(async (req, res) => {
-  const { questionId, studentAnswer, isCorrect } = req.body
+  const { questionId, studentAnswer, isCorrect, explainToken } = req.body
+
+  if (!isValidExplainToken(explainToken, req.user._id, questionId)) {
+    throw new AppError('Answer this question before asking for its explanation.', 403)
+  }
 
   const question = await Question.findById(questionId)
   if (!question) throw new AppError('Question not found', 404)

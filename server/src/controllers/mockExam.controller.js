@@ -127,100 +127,125 @@ export const saveAnswer = asyncHandler(async (req, res) => {
 export const submitExam = asyncHandler(async (req, res) => {
   const { answers, timeSpentSeconds } = req.body
 
+  // Claim the exam atomically before marking — two overlapping submit
+  // requests (a double-click, or a retry while the first is still
+  // marking) would otherwise both pass a read-then-check and mark the
+  // paper twice: double AI cost, a duplicate Session, double-counted
+  // totals. Only the request that flips the status gets to mark.
+  const claim = await MockExam.updateOne(
+    { _id: req.params.id, studentId: req.user._id, status: { $in: ['generated', 'in_progress'] } },
+    { $set: { status: 'submitted' } }
+  )
+
   const exam = await MockExam.findOne({
     _id:       req.params.id,
     studentId: req.user._id,
   })
 
   if (!exam) throw new AppError('Exam not found', 404)
-  if (exam.status === 'marked') {
-    return res.json({ success: true, message: 'Already marked', exam })
-  }
-  if (exam.status === 'pending_review') {
-    return res.json({ success: true, message: 'Awaiting your teacher\'s review', results: null })
-  }
-
-  // ── Apply final answers if provided ───────────────────────────
-  if (answers) {
-    if (answers.sectionA) {
-      answers.sectionA.forEach((ans, i) => {
-        if (exam.sectionA[i]) exam.sectionA[i].studentAnswer = ans
-      })
+  if (claim.modifiedCount === 0) {
+    if (exam.status === 'marked') {
+      return res.json({ success: true, message: 'Already marked', results: exam.results, examId: exam._id })
     }
-    if (answers.sectionB) {
-      answers.sectionB.forEach((ans, i) => {
-        if (exam.sectionB[i]) exam.sectionB[i].studentAnswer = ans
-      })
+    if (exam.status === 'pending_review') {
+      return res.json({ success: true, message: 'Awaiting your teacher\'s review', results: null, examId: exam._id })
     }
-    if (answers.sectionC) {
-      answers.sectionC.forEach((ans, i) => {
-        if (exam.sectionC[i]) exam.sectionC[i].studentAnswer = ans
-      })
-    }
+    throw new AppError('This exam is already being marked. Please wait.', 409)
   }
 
-  exam.status          = 'submitted'
-  exam.submittedAt     = new Date()
-  exam.timeSpentSeconds = timeSpentSeconds || 0
-  exam.markModified('sectionA')
-  exam.markModified('sectionB')
-  exam.markModified('sectionC')
-  await exam.save()
+  // From here until the marked result is saved, any failure must hand
+  // the exam back to 'in_progress' — otherwise it stays stuck in
+  // 'submitted' and the claim above would refuse every retry.
+  let gradeInfo
+  let marking
+  try {
+    // ── Apply final answers if provided ─────────────────────────
+    if (answers) {
+      if (answers.sectionA) {
+        answers.sectionA.forEach((ans, i) => {
+          if (exam.sectionA[i]) exam.sectionA[i].studentAnswer = ans
+        })
+      }
+      if (answers.sectionB) {
+        answers.sectionB.forEach((ans, i) => {
+          if (exam.sectionB[i]) exam.sectionB[i].studentAnswer = ans
+        })
+      }
+      if (answers.sectionC) {
+        answers.sectionC.forEach((ans, i) => {
+          if (exam.sectionC[i]) exam.sectionC[i].studentAnswer = ans
+        })
+      }
+    }
 
-  // ── Was any Section B/C answer photo-scanned? ──────────────────
-  // Marks are always computed below regardless (same as Assignments —
-  // the AI's read is a starting point either way), but if this student
-  // is in a teacher's class for this subject AND any answer was
-  // scanned, results are withheld until the teacher reviews them.
-  const hasScannedAnswer = [...exam.sectionB, ...exam.sectionC].some(q => q.wasScanned)
-  const inTeacherClass = hasScannedAnswer
-    ? await Class.exists({ subject: exam.subject, studentIds: req.user._id })
-    : false
-  const needsTeacherReview = hasScannedAnswer && !!inTeacherClass
+    exam.submittedAt      = new Date()
+    exam.timeSpentSeconds = timeSpentSeconds || 0
+    exam.markModified('sectionA')
+    exam.markModified('sectionB')
+    exam.markModified('sectionC')
+    await exam.save()
 
-  // ── Mark the paper ────────────────────────────────────────────
-  const marking = await markFullPaper(exam)
+    // ── Was any Section B/C answer photo-scanned? ────────────────
+    // Marks are always computed below regardless (same as Assignments —
+    // the AI's read is a starting point either way), but if this student
+    // is in a teacher's class for this subject AND any answer was
+    // scanned, results are withheld until the teacher reviews them.
+    const hasScannedAnswer = [...exam.sectionB, ...exam.sectionC].some(q => q.wasScanned)
+    const inTeacherClass = hasScannedAnswer
+      ? await Class.exists({ subject: exam.subject, studentIds: req.user._id })
+      : false
+    const needsTeacherReview = hasScannedAnswer && !!inTeacherClass
 
-  // ── Generate examiner comment ──────────────────────────────
-  const examinerComment = await generateExaminerComment(
-    exam.subject,
-    marking.totalMarks,
-    marking.availableMarks,
-    marking.sectionAMarks,
-    marking.sectionBMarks,
-    marking.sectionCMarks,
-    marking.sectionATotal,
-    marking.sectionBTotal,
-    marking.sectionCTotal,
-  )
+    // ── Mark the paper ──────────────────────────────────────────
+    marking = await markFullPaper(exam)
 
-  const gradeInfo = calculateGrade(marking.totalMarks, marking.availableMarks, exam.examType)
+    // ── Generate examiner comment ────────────────────────────
+    const examinerComment = await generateExaminerComment(
+      exam.subject,
+      marking.totalMarks,
+      marking.availableMarks,
+      marking.sectionAMarks,
+      marking.sectionBMarks,
+      marking.sectionCMarks,
+      marking.sectionATotal,
+      marking.sectionBTotal,
+      marking.sectionCTotal,
+    )
 
-  // ── Save marked results ───────────────────────────────────────
-  exam.sectionA = marking.markedA
-  exam.sectionB = marking.markedB
-  exam.sectionC = marking.markedC
-  exam.status   = needsTeacherReview ? 'pending_review' : 'marked'
-  exam.results  = {
-    sectionAMarks:   marking.sectionAMarks,
-    sectionBMarks:   marking.sectionBMarks,
-    sectionCMarks:   marking.sectionCMarks,
-    sectionATotal:   marking.sectionATotal,
-    sectionBTotal:   marking.sectionBTotal,
-    sectionCTotal:   marking.sectionCTotal,
-    totalMarks:      marking.totalMarks,
-    availableMarks:  marking.availableMarks,
-    percent:         marking.percent,
-    waecGrade:       gradeInfo.grade,
-    gradeLabel:      gradeInfo.label,
-    examinerComment: typeof examinerComment === 'string'
-      ? examinerComment
-      : examinerComment?.comment || '',
+    gradeInfo = calculateGrade(marking.totalMarks, marking.availableMarks, exam.examType)
+
+    // ── Save marked results ─────────────────────────────────────
+    exam.sectionA = marking.markedA
+    exam.sectionB = marking.markedB
+    exam.sectionC = marking.markedC
+    exam.status   = needsTeacherReview ? 'pending_review' : 'marked'
+    exam.results  = {
+      sectionAMarks:   marking.sectionAMarks,
+      sectionBMarks:   marking.sectionBMarks,
+      sectionCMarks:   marking.sectionCMarks,
+      sectionATotal:   marking.sectionATotal,
+      sectionBTotal:   marking.sectionBTotal,
+      sectionCTotal:   marking.sectionCTotal,
+      totalMarks:      marking.totalMarks,
+      availableMarks:  marking.availableMarks,
+      percent:         marking.percent,
+      waecGrade:       gradeInfo.grade,
+      gradeLabel:      gradeInfo.label,
+      examinerComment: typeof examinerComment === 'string'
+        ? examinerComment
+        : examinerComment?.comment || '',
+    }
+    exam.markModified('sectionA')
+    exam.markModified('sectionB')
+    exam.markModified('sectionC')
+    await exam.save()
+  } catch (err) {
+    await MockExam.updateOne(
+      { _id: exam._id, status: 'submitted' },
+      { $set: { status: 'in_progress' } }
+    ).catch(() => {})
+    throw err
   }
-  exam.markModified('sectionA')
-  exam.markModified('sectionB')
-  exam.markModified('sectionC')
-  await exam.save()
 
   // ── Save as a session for analytics ──────────────────────────
   await Session.create({
@@ -265,12 +290,12 @@ export const getExam = asyncHandler(async (req, res) => {
 
   if (!exam) throw new AppError('Exam not found', 404)
 
-  // Don't send correct answers/marks while in progress or awaiting
-  // teacher review — a pending_review exam's marks were computed but
-  // aren't the teacher's final word yet.
-  const payload = ['in_progress', 'pending_review'].includes(exam.status)
-    ? sanitiseExam(exam)
-    : exam
+  // Correct answers/marks go out only once the exam is marked — every
+  // earlier status hides them: 'generated' (not yet started, so the
+  // answers could otherwise be read before starting), 'in_progress',
+  // 'submitted' (marking still running), and 'pending_review' (marks
+  // computed but not yet the teacher's final word).
+  const payload = exam.status === 'marked' ? exam : sanitiseExam(exam)
 
   res.json({ success: true, exam: payload })
 })
@@ -384,6 +409,7 @@ const sanitiseExam = (exam) => {
   obj.sectionC = obj.sectionC.map(q => stripMarks({
     ...q,
     modelAnswer: undefined,
+    parts: q.parts?.map(p => ({ ...p, answer: undefined })),
   }))
 
   return obj

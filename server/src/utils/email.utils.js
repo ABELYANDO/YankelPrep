@@ -10,8 +10,11 @@
 // delivery to the email address the Resend account itself was signed
 // up with — fine for testing, but real users won't receive mail until
 // a domain is verified.
-const RESEND_API_KEY = process.env.RESEND_API_KEY
-const FROM_ADDRESS    = 'YankelPrep <onboarding@resend.dev>'
+//
+// The key is read when an email is sent, not at import time: index.js
+// calls dotenv.config() only after its (hoisted) imports have run, so a
+// module-level read here would always see undefined in local dev.
+const FROM_ADDRESS = 'YankelPrep <onboarding@resend.dev>'
 
 import dns from 'dns/promises'
 
@@ -105,7 +108,7 @@ export const sendPasswordResetEmail = async (to, resetUrl) => {
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${RESEND_API_KEY}`,
+      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({

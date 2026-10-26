@@ -5,8 +5,6 @@
 import { getCanonicalTopics } from '../data/beceCurriculum.js'
 import { normalizeTopic } from './questionExtraction.utils.js'
 
-const CURRENT_YEAR = new Date().getFullYear()
-
 // Years of same-curriculum history before frequency/recency/gap are
 // fully trusted. Below this, scoring leans on the real syllabus
 // signal instead — see freqTrust in analyseTopics/scoreOneTopic.
@@ -41,7 +39,15 @@ const SUBJECT_WEIGHTS = {
 // ── Main export ────────────────────────────────────────────────
 // Receives all questions for one subject, returns scored topic array
 // sorted from highest to lowest predicted confidence.
-export const analyseTopics = (questions, subject, examType) => {
+//
+// `referenceYear` is the year the prediction is made for — recency,
+// gap, trend and the sparkline window are all measured back from it.
+// Live predictions use the current year; the hold-out evaluation
+// (scripts/evaluatePredictions.js) sets it to the held-out paper's
+// year, so a paper is predicted exactly as it would have been then.
+export const analyseTopics = (questions, subject, examType, { referenceYear } = {}) => {
+  const refYear = referenceYear ?? new Date().getFullYear()
+
   // Real syllabus signal only applies to BECE — Question.subject values
   // like 'Mathematics'/'Computing' are shared with WASSCE, so this must
   // gate on examType, not just whether a canonical list exists for the
@@ -63,7 +69,7 @@ export const analyseTopics = (questions, subject, examType) => {
 
   // Step 2: Score each topic across all 8 signals
   const scored = Object.entries(topicMap).map(([topic, qs]) => {
-    return scoreOneTopic(topic, qs, subject, topicMap, canonicalTopics, freqTrust)
+    return scoreOneTopic(topic, qs, subject, topicMap, canonicalTopics, freqTrust, refYear)
   })
 
   // Step 3: Sort highest raw score first
@@ -95,7 +101,7 @@ const computeSyllabusSignal = (topic, canonicalTopics) => {
 }
 
 // ── Step 2: Score one topic ────────────────────────────────────
-const scoreOneTopic = (topic, questions, subject, allTopics, canonicalTopics, freqTrust) => {
+const scoreOneTopic = (topic, questions, subject, allTopics, canonicalTopics, freqTrust, refYear) => {
   const years     = [...new Set(questions.map(q => q.year))].sort()
   const latestYear = Math.max(...years)
   const weights   = SUBJECT_WEIGHTS[subject] || SUBJECT_WEIGHTS.default
@@ -107,20 +113,20 @@ const scoreOneTopic = (topic, questions, subject, allTopics, canonicalTopics, fr
   // Signal 2 — Recency (exponential decay: recent years worth more)
   // A topic seen in 2024 scores higher than one seen in 2016.
   const recencyScore = years.reduce((sum, yr) => {
-    const age    = CURRENT_YEAR - yr         // how many years ago
+    const age    = refYear - yr              // how many years ago
     const weight = Math.exp(-age * 0.15)     // decay factor: older = lower
     return sum + weight
   }, 0) / years.length
 
   // Signal 3 — Gap score (how many years since last appearance)
   // A topic absent for 3+ years is "due" to return.
-  const yearsSinceLastSeen = CURRENT_YEAR - latestYear
+  const yearsSinceLastSeen = refYear - latestYear
   // Gap score peaks at 3 years then plateaus — extreme gaps are less reliable
   const gapScore = Math.min(yearsSinceLastSeen / 3, 1)
 
   // Signal 4 — Trend direction
   // Compare frequency in first half vs second half of the 10-year window
-  const midYear   = CURRENT_YEAR - 5
+  const midYear   = refYear - 5
   const earlyCount = years.filter(y => y <= midYear).length
   const recentCount = years.filter(y => y > midYear).length
   // Returns -1 (falling), 0 (stable), or +1 (rising)
@@ -128,7 +134,7 @@ const scoreOneTopic = (topic, questions, subject, allTopics, canonicalTopics, fr
                        : recentCount < earlyCount ? -1 : 0
 
   // Signal 5 — Year-on-year data (for sparkline chart on the UI)
-  const yearlyFrequency = buildYearlyFrequency(questions)
+  const yearlyFrequency = buildYearlyFrequency(questions, refYear)
 
   // Signal 6 — Section type prediction
   // What section does this topic most commonly appear in?
@@ -201,14 +207,14 @@ const scoreOneTopic = (topic, questions, subject, allTopics, canonicalTopics, fr
 }
 
 // ── Yearly frequency (sparkline data) ─────────────────────────
-const buildYearlyFrequency = (questions) => {
+const buildYearlyFrequency = (questions, refYear) => {
   const countByYear = questions.reduce((map, q) => {
     map[q.year] = (map[q.year] || 0) + 1
     return map
   }, {})
 
   // Return last 10 years as a sorted array
-  const startYear = CURRENT_YEAR - 10
+  const startYear = refYear - 10
   return Array.from({ length: 10 }, (_, i) => {
     const year = startYear + i + 1
     return { year, count: countByYear[year] || 0 }

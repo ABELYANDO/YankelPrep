@@ -4,9 +4,18 @@ import { generateToken } from '../utils/jwt.js'
 import { sendPasswordResetEmail, domainAcceptsMail, findDomainTypo } from '../utils/email.utils.js'
 import { asyncHandler, AppError } from '../middleware/error.middleware.js'
 
+// The User model stores emails trimmed and lower-cased, so every lookup
+// must normalise the same way — otherwise "Ama@Gmail.com" can register
+// but never log in. Anything that isn't a string becomes '' so a body
+// like { "email": { "$ne": null } } can't reach a query as an operator.
+const normalizeEmail = (value) =>
+  typeof value === 'string' ? value.trim().toLowerCase() : ''
+
 // ── POST /api/auth/register ────────────────────────────────────
 export const register = asyncHandler(async (req, res) => {
-  const { fullName, email, password, school, examType, subjects } = req.body
+  const { fullName, password, school, examType, subjects } = req.body
+  const email = normalizeEmail(req.body.email)
+  if (!email) throw new AppError('Email is required.', 400)
 
   // 1. Check if email already registered
   const existing = await User.findOne({ email })
@@ -54,7 +63,8 @@ export const register = asyncHandler(async (req, res) => {
 // credentials here still gets the identical generic error, not a
 // successful login into the wrong portal.
 export const login = asyncHandler(async (req, res) => {
-  const { email, password } = req.body
+  const { password } = req.body
+  const email = normalizeEmail(req.body.email)
 
   // 1. Validate inputs
   if (!email || !password) {
@@ -108,7 +118,8 @@ export const getMe = asyncHandler(async (req, res) => {
 // wrong password, or a real student account) to avoid leaking
 // account existence/role.
 export const adminLogin = asyncHandler(async (req, res) => {
-  const { email, password } = req.body
+  const { password } = req.body
+  const email = normalizeEmail(req.body.email)
 
   if (!email || !password) {
     throw new AppError('Email and password are required.', 400)
@@ -140,7 +151,8 @@ export const adminLogin = asyncHandler(async (req, res) => {
 // attempt — an unset server code must never match an empty or
 // missing client code.
 export const adminRegister = asyncHandler(async (req, res) => {
-  const { fullName, email, password, inviteCode } = req.body
+  const { fullName, password, inviteCode } = req.body
+  const email = normalizeEmail(req.body.email)
 
   const serverCode = process.env.ADMIN_SIGNUP_CODE
   if (!serverCode || !serverCode.trim()) {
@@ -149,6 +161,8 @@ export const adminRegister = asyncHandler(async (req, res) => {
   if (!inviteCode || inviteCode !== serverCode) {
     throw new AppError('Invalid invite code.', 403)
   }
+
+  if (!email) throw new AppError('Email is required.', 400)
 
   const existing = await User.findOne({ email })
   if (existing) throw new AppError('Email already registered.', 409)
@@ -185,7 +199,7 @@ export const adminRegister = asyncHandler(async (req, res) => {
 // cause" convention login/adminLogin use, so this can't be used to
 // check which emails have an account.
 export const forgotPassword = asyncHandler(async (req, res) => {
-  const { email } = req.body
+  const email = normalizeEmail(req.body.email)
   if (!email) throw new AppError('Email is required.', 400)
 
   const user = await User.findOne({ email })
@@ -220,7 +234,7 @@ export const forgotPassword = asyncHandler(async (req, res) => {
 // ── POST /api/auth/reset-password ──────────────────────────────
 export const resetPassword = asyncHandler(async (req, res) => {
   const { token, newPassword } = req.body
-  if (!token || !newPassword) {
+  if (typeof token !== 'string' || typeof newPassword !== 'string' || !token || !newPassword) {
     throw new AppError('Token and new password are required.', 400)
   }
   if (newPassword.length < 6) {
@@ -250,7 +264,8 @@ export const resetPassword = asyncHandler(async (req, res) => {
 // ── POST /api/auth/teacher-login ───────────────────────────────
 // Mirrors adminLogin — same "never reveal which case it was" guard.
 export const teacherLogin = asyncHandler(async (req, res) => {
-  const { email, password } = req.body
+  const { password } = req.body
+  const email = normalizeEmail(req.body.email)
 
   if (!email || !password) {
     throw new AppError('Email and password are required.', 400)
@@ -283,7 +298,9 @@ export const teacherLogin = asyncHandler(async (req, res) => {
 // createClass checks against so a teacher can only run classes in a
 // subject they've declared, via PUT /api/settings/profile.
 export const teacherRegister = asyncHandler(async (req, res) => {
-  const { fullName, email, password } = req.body
+  const { fullName, password } = req.body
+  const email = normalizeEmail(req.body.email)
+  if (!email) throw new AppError('Email is required.', 400)
 
   const existing = await User.findOne({ email })
   if (existing) throw new AppError('Email already registered.', 409)

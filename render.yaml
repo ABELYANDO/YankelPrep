@@ -30,9 +30,7 @@ services:
         sync: false
       - key: MAX_STUDENTS_PER_TEACHER
         value: 30
-      - key: EMAIL_USER
-        sync: false
-      - key: EMAIL_PASS
+      - key: RESEND_API_KEY
         sync: false
     healthCheckPath: /api/health
     autoDeploy: true

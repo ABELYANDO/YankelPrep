@@ -19,7 +19,10 @@
     "grades:backfill-bece": "node scripts/backfillBeceGrades.js",
     "subjects:rename-bece-science": "node scripts/renameBeceScience.js",
     "questions:classify-existing": "node scripts/classifyExistingQuestions.js",
-    "questions:migrate-structured-to-essay": "node scripts/migrateStructuredToEssay.js"
+    "questions:migrate-structured-to-essay": "node scripts/migrateStructuredToEssay.js",
+    "eval:dataset": "node scripts/evaluation/datasetStats.js",
+    "eval:predictions": "node scripts/evaluation/evaluatePredictions.js",
+    "eval:export-marking": "node scripts/evaluation/exportMarkingSample.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",

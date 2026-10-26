@@ -263,6 +263,7 @@ export default function PracticePage() {
         questionId:    question._id,
         studentAnswer: currentResult.studentAnswer || '',
         isCorrect:     currentResult.isCorrect,
+        explainToken:  currentResult.explainToken,
       })
       setExplanation(data.explanation)
     } catch (err) {

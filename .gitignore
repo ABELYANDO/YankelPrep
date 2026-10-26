@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Environment files — hold MONGODB_URI, JWT_SECRET, API keys
+.env
+.env.*
+!.env.example
+
+# Build output
+client/dist/
+
+# Evaluation data — contains students' answers; keep out of the repo
+server/scripts/evaluation/data/
+server/scripts/evaluation/output/
+__pycache__/
+.venv/
+
+# Thesis documents — not needed to run or deploy the app, and kept off
+# GitHub until submitted (delete this line to version them too)
+project documentation/
+
+# Word/Excel temporary lock files
+~$*
+
+# Logs and OS clutter
+*.log
+.DS_Store
+Thumbs.db

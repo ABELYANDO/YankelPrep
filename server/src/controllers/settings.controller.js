@@ -91,9 +91,11 @@ export const changePassword = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user._id).select('+password')
   if (!user) throw new AppError('User not found', 404)
 
-  // Verify current password
+  // Verify current password. 400, not 401: the client treats any 401 as
+  // an expired session and logs the user out, which would bounce them
+  // to /login for a simple typo instead of showing this message.
   const isMatch = await bcrypt.compare(currentPassword, user.password)
-  if (!isMatch) throw new AppError('Current password is incorrect', 401)
+  if (!isMatch) throw new AppError('Current password is incorrect', 400)
 
   // Set new password — the model pre-save hook will hash it
   user.password = newPassword
