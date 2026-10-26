@@ -158,6 +158,7 @@ export const submitExam = asyncHandler(async (req, res) => {
   // 'submitted' and the claim above would refuse every retry.
   let gradeInfo
   let marking
+  let needsTeacherReview = false  // also used in the response below, so declared outside the try
   try {
     // ── Apply final answers if provided ─────────────────────────
     if (answers) {
@@ -194,7 +195,7 @@ export const submitExam = asyncHandler(async (req, res) => {
     const inTeacherClass = hasScannedAnswer
       ? await Class.exists({ subject: exam.subject, studentIds: req.user._id })
       : false
-    const needsTeacherReview = hasScannedAnswer && !!inTeacherClass
+    needsTeacherReview = hasScannedAnswer && !!inTeacherClass
 
     // ── Mark the paper ──────────────────────────────────────────
     marking = await markFullPaper(exam)
