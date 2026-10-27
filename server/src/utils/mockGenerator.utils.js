@@ -438,6 +438,35 @@ const weightedSelect = (questions, count, getWeight) => {
   return selected
 }
 
+// ── Make part marks add up to a question's total ───────────────
+// Scales the parts proportionally (largest-remainder rounding) when
+// they don't already sum to `total`, keeping every part at least 1 mark
+// where the total allows. Parts already summing correctly, and questions
+// without parts, are returned unchanged.
+export const fitPartMarks = (parts, total) => {
+  if (!Array.isArray(parts) || parts.length === 0 || !(total > 0)) return parts || []
+  const marks = parts.map(p => Math.max(0, Number(p.marks) || 0))
+  const sum = marks.reduce((s, m) => s + m, 0)
+  if (sum === total) return parts
+  const weights = sum > 0 ? marks : marks.map(() => 1)
+  const wSum = weights.reduce((s, w) => s + w, 0)
+  const exact = weights.map(w => (w / wSum) * total)
+  const floor = exact.map(Math.floor)
+  let left = total - floor.reduce((s, m) => s + m, 0)
+  exact.map((e, i) => [e - floor[i], i]).sort((a, b) => b[0] - a[0])
+    .forEach(([, i]) => { if (left > 0) { floor[i]++; left-- } })
+  // No zero-mark parts when there are enough marks to go round
+  if (total >= parts.length) {
+    for (let i = 0; i < floor.length; i++) {
+      if (floor[i] === 0) {
+        const donor = floor.indexOf(Math.max(...floor))
+        floor[donor]--; floor[i]++
+      }
+    }
+  }
+  return parts.map((p, i) => ({ ...p, marks: floor[i] }))
+}
+
 // ── Fill gaps with AI-generated questions ─────────────────────
 // If the question bank doesn't have enough questions for a
 // section, Gemini generates the remaining ones. `multiPart` (not
@@ -458,7 +487,8 @@ Generate questions that exactly match WAEC ${examType} ${subject} standard.
 Respond with valid JSON only. No markdown.`
 
   const prompt = `Generate ${gap} ${type} question(s) for a WAEC ${examType} ${subject} exam.
-Section ${section} — ${marksEach} mark(s) each.
+Section ${section} — ${marksEach} mark(s) each.${multiPart && type !== 'MCQ' ? `
+The "marks" of all parts of a question must add up to exactly ${marksEach}.` : ''}
 Make questions exam-standard, clear, and at appropriate difficulty.
 ${promptHint ? `\n${promptHint}\n` : ''}
 ${type === 'MCQ' ? `Return JSON array:
@@ -500,9 +530,12 @@ Return JSON array:
     const generated = await generateAIJSON(prompt, systemPrompt)
     const aiQuestions = Array.isArray(generated) ? generated : []
 
-    // Tag AI-generated questions
+    // Tag AI-generated questions. Part marks are forced to add up to the
+    // section's marksEach — the model doesn't always comply, and a 40-mark
+    // question whose parts total 12 caps every student at 12/40.
     const tagged = aiQuestions.map(q => ({
       ...q,
+      parts: fitPartMarks(q.parts, marksEach),
       isAIGenerated: true,
       subject,
       examType,

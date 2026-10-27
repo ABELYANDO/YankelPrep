@@ -20,6 +20,7 @@
     "subjects:rename-bece-science": "node scripts/renameBeceScience.js",
     "questions:classify-existing": "node scripts/classifyExistingQuestions.js",
     "questions:migrate-structured-to-essay": "node scripts/migrateStructuredToEssay.js",
+    "questions:fix-issues": "node scripts/fixQuestionBankIssues.js",
     "eval:dataset": "node scripts/evaluation/datasetStats.js",
     "eval:predictions": "node scripts/evaluation/evaluatePredictions.js",
     "eval:export-marking": "node scripts/evaluation/exportMarkingSample.js"
