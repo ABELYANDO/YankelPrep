@@ -1,6 +1,6 @@
 import Question from '../models/Question.model.js'
 import MasteryProfile from '../models/MasteryProfile.model.js'
-import { generateAIJSON, generateAIResponse } from './aiService.js'
+import { generateAIJSON, generateAIJSONWithImages, generateAIResponse } from './aiService.js'
 import { getCurriculumScope, formatScopeNote } from './curriculumGrounding.utils.js'
 
 // ── WAEC paper structure constants ─────────────────────────────
@@ -620,8 +620,14 @@ Award partial marks where students show partial understanding.
 Be fair, consistent, and examiner-standard in all feedback.
 Respond with valid JSON only.`
 
+    // Photographed answers: their pages go to the AI too, numbered in
+    // order, and each question lists which page numbers are its own.
+    const images = []
     const questionsForAI = nonMCQ.map(q => {
       const scopeNote = formatScopeNote(getCurriculumScope(subject, q.topic))
+      const pages = q.wasScanned
+        ? (q.scannedFiles || []).map(f => images.push({ data: f.data, mimeType: f.mimeType }))
+        : []
       return {
         section:       q._sectionKey,
         index:         q._idx,
@@ -631,12 +637,18 @@ Respond with valid JSON only.`
         parts:         q.parts,
         studentAnswer: q.studentAnswer,
         type:          q.type,
+        ...(pages.length > 0 && { scannedPages: pages }),
         ...(scopeNote && { curriculumNote: scopeNote }),
       }
     })
 
+    const PAGES_NOTE = images.length > 0 ? `
+Some answers were handwritten and photographed: ${images.length} page(s) are attached in order, and
+a question's "scannedPages" lists its page numbers (1 = first attached page). For those questions
+the studentAnswer is an AI transcription that may describe or miss diagrams — read the pages as the
+authoritative answer and mark any diagram, graph, table or sketch from them.` : ''
     const prompt = `Mark these ${subject} exam answers. For each question return marks and feedback.
-If a question includes a "curriculumNote", grade strictly within that syllabus scope.
+If a question includes a "curriculumNote", grade strictly within that syllabus scope.${PAGES_NOTE}
 
 Questions and student answers:
 ${JSON.stringify(questionsForAI, null, 2)}
@@ -659,7 +671,16 @@ Return a JSON array with one object per question:
 ]`
 
     try {
-      const aiResults = await generateAIJSON(prompt, systemPrompt)
+      let aiResults
+      try {
+        aiResults = images.length > 0
+          ? await generateAIJSONWithImages(prompt, systemPrompt, images)
+          : await generateAIJSON(prompt, systemPrompt)
+      } catch (err) {
+        if (images.length === 0) throw err
+        console.error('[MockMarker] Marking with scanned pages failed, using transcriptions only:', err.message)
+        aiResults = await generateAIJSON(prompt.replace(PAGES_NOTE, ''), systemPrompt)
+      }
 
       if (Array.isArray(aiResults)) {
         aiResults.forEach(result => {

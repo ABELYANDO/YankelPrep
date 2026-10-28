@@ -1,13 +1,7 @@
 import { useState } from 'react'
 import { Camera, FileText, X, CheckCircle2 } from 'lucide-react'
 import ScannedFilesViewer from './ScannedFilesViewer'
-
-const fileToBase64 = (file) => new Promise((resolve, reject) => {
-  const reader = new FileReader()
-  reader.onload  = () => resolve(reader.result.split(',')[1])
-  reader.onerror = () => reject(new Error('Failed to read file'))
-  reader.readAsDataURL(file)
-})
+import { fileToBase64, photoToBase64 } from '../utils/fileUtils'
 
 // ── FileUploadInput ──────────────────────────────────────────────
 // Lets someone attach a document as either multiple photo pages or a
@@ -30,7 +24,7 @@ export default function FileUploadInput({
     if (newFiles.length === 0) return
     try {
       const converted = await Promise.all(newFiles.map(async f => ({
-        data: await fileToBase64(f), mimeType: f.type, filename: f.name,
+        ...(await photoToBase64(f)), filename: f.name,
       })))
       // Photos accumulate across multiple picks; switching away from a
       // previously-attached PDF starts a fresh photo set.

@@ -152,8 +152,10 @@ const callClaudeWithImages = async (prompt, systemPrompt, images) => {
     messages: [{
       role: 'user',
       content: [
+        // A scanned answer can be a PDF, which Claude takes as a document
+        // block rather than an image.
         ...images.map(img => ({
-          type:   'image',
+          type:   img.mimeType === 'application/pdf' ? 'document' : 'image',
           source: { type: 'base64', media_type: img.mimeType, data: img.data },
         })),
         { type: 'text', text: prompt },

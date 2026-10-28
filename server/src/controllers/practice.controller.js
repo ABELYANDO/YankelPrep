@@ -307,7 +307,10 @@ export const submitAnswer = asyncHandler(async (req, res) => {
   if (question.type === 'MCQ') {
     markingResult = markMCQ(studentAnswer, question.correctOption, question.marks)
   } else {
-    markingResult = await markEssay(question, studentAnswer, question.subject)
+    const pages = wasScanned && Array.isArray(scannedFiles)
+      ? scannedFiles.map(f => ({ data: f.data, mimeType: f.mimeType }))
+      : []
+    markingResult = await markEssay(question, studentAnswer, question.subject, pages)
   }
 
   // ── Update mastery profile ─────────────────────────────────

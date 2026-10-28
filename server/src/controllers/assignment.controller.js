@@ -290,6 +290,9 @@ export const submitSubmission = asyncHandler(async (req, res) => {
     const question = assignment.questions[i]
     const studentAnswer = submission.answers[i]?.studentAnswer || ''
     const wasScanned = !!submission.answers[i]?.wasScanned
+    // Plain copies, so they survive the answer being replaced below —
+    // these pages are what the teacher reviews.
+    const scannedFiles = (submission.answers[i]?.scannedFiles || []).map(f => ({ data: f.data, mimeType: f.mimeType }))
     if (wasScanned) hasScannedAnswer = true
     availableMarks += question.marks || 0
 
@@ -299,13 +302,14 @@ export const submitSubmission = asyncHandler(async (req, res) => {
     } else if (question.type === 'MCQ') {
       result = markMCQ(studentAnswer, question.correctOption, question.marks)
     } else {
-      result = await markEssay(question, studentAnswer, assignment.subject)
+      result = await markEssay(question, studentAnswer, assignment.subject, wasScanned ? scannedFiles : [])
     }
 
     totalMarks += result.marksAwarded || 0
     submission.answers[i] = {
       studentAnswer,
       wasScanned,
+      scannedFiles,
       marksAwarded: result.marksAwarded || 0,
       aiMarksAwarded: result.marksAwarded || 0,
       isCorrect:    result.isCorrect || false,
@@ -415,6 +419,13 @@ labelled in parts — e.g. (a)(i), (a)(ii), (b) — preserve those exact
 labels at the start of each part's text, each on its own line, so the
 structure is clear. If there are no part labels, just transcribe the
 answer as continuous text.
+
+If the student has drawn a diagram, graph, table or sketch, do not skip
+it: at the point where it appears, write a description in square
+brackets starting with "Diagram:", giving what it shows, every label
+exactly as written, and any arrows, values or units — e.g.
+[Diagram: a plant cell with labels "cell wall", "nucleus", "vacuole"].
+Describe only what is drawn; do not judge whether it is correct.
 
 Return this exact JSON structure:
 { "transcribedAnswer": "..." }`

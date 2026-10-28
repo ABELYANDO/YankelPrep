@@ -1,4 +1,30 @@
-import { generateAIJSON } from './aiService.js'
+import { generateAIJSON, generateAIJSONWithImages } from './aiService.js'
+
+// Added to a marking prompt when the student's handwritten pages are
+// attached. The transcription is text only, so a diagram, graph or
+// table the student drew can only be marked from the pages themselves.
+export const SCRIPT_IMAGES_NOTE = `
+
+The student's handwritten script is attached as image(s)/PDF. The typed
+answer above is an AI transcription of it and may describe or miss
+diagrams. Read the attached pages as the authoritative answer: mark any
+diagram, graph, table or sketch from the pages (accuracy, labels,
+units, neatness where the marking guide rewards it), and do not treat a
+diagram as missing just because the transcription lacks it.`
+
+// Uses the vision-capable call only when there are pages to look at,
+// falling back to the transcription alone if that call fails, so a bad
+// or oversized photo never turns into a mark of zero.
+const markWithAI = async (prompt, systemPrompt, images = []) => {
+  if (images.length > 0) {
+    try {
+      return await generateAIJSONWithImages(prompt + SCRIPT_IMAGES_NOTE, systemPrompt, images)
+    } catch (err) {
+      console.error('[Marking] Marking with scanned pages failed, using transcription only:', err.message)
+    }
+  }
+  return generateAIJSON(prompt, systemPrompt)
+}
 import { getCurriculumScope, formatScopeNote } from './curriculumGrounding.utils.js'
 
 // ── WASSCE grade calculator ─────────────────────────────────────
@@ -71,15 +97,17 @@ export const markMCQ = (studentAnswer, correctAnswer, marks = 1) => {
 // (marked against the four fixed WAEC essay criteria). Both paths
 // return the same result shape, so callers never need to know which
 // one ran.
-export const markEssay = async (question, studentAnswer, subject) => {
+// `images` ([{ data, mimeType }]) are the student's scanned pages, if
+// the answer was photographed — see SCRIPT_IMAGES_NOTE.
+export const markEssay = async (question, studentAnswer, subject, images = []) => {
   if (question.parts?.length > 0) {
-    return markMultiPart(question, studentAnswer, subject)
+    return markMultiPart(question, studentAnswer, subject, images)
   }
-  return markFreeResponseEssay(question, studentAnswer, subject)
+  return markFreeResponseEssay(question, studentAnswer, subject, images)
 }
 
 // ── Multi-part marker (lettered sub-questions, own marking guide) ─
-const markMultiPart = async (question, studentAnswer, subject) => {
+const markMultiPart = async (question, studentAnswer, subject, images = []) => {
   const systemPrompt = `You are an experienced WAEC ${subject} examiner.
 Mark student answers fairly and consistently against the marking guide.
 Award partial marks where the student shows partial understanding.
@@ -121,7 +149,7 @@ Return this exact JSON structure:
 }` + formatScopeNote(getCurriculumScope(subject, question.topic))
 
   try {
-    const result = await generateAIJSON(prompt, systemPrompt)
+    const result = await markWithAI(prompt, systemPrompt, images)
     return {
       isCorrect:      result.totalMarksAwarded >= result.totalMarksAvailable * 0.5,
       marksAwarded:   result.totalMarksAwarded   || 0,
@@ -143,7 +171,7 @@ Return this exact JSON structure:
 }
 
 // ── Free-response essay marker (four fixed WAEC criteria) ─────────
-const markFreeResponseEssay = async (question, studentAnswer, subject) => {
+const markFreeResponseEssay = async (question, studentAnswer, subject, images = []) => {
   const systemPrompt = `You are an experienced WAEC ${subject} examiner marking essay responses.
 Use the official WAEC essay assessment criteria.
 Be fair, constructive, and specific in your feedback.
@@ -180,7 +208,7 @@ Return this exact JSON structure:
 }` + formatScopeNote(getCurriculumScope(subject, question.topic))
 
   try {
-    const result = await generateAIJSON(prompt, systemPrompt)
+    const result = await markWithAI(prompt, systemPrompt, images)
     return {
       isCorrect:        result.totalMarksAwarded >= result.totalMarksAvailable * 0.5,
       marksAwarded:     result.totalMarksAwarded   || 0,

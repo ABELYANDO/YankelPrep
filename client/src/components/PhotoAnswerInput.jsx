@@ -1,13 +1,7 @@
 import { useState } from 'react'
 import { Camera, FileText, CheckCircle2, X } from 'lucide-react'
 import ScannedFilesViewer from './ScannedFilesViewer'
-
-const fileToBase64 = (file) => new Promise((resolve, reject) => {
-  const reader = new FileReader()
-  reader.onload  = () => resolve(reader.result.split(',')[1])
-  reader.onerror = () => reject(new Error('Failed to read file'))
-  reader.readAsDataURL(file)
-})
+import { fileToBase64, photoToBase64 } from '../utils/fileUtils'
 
 // ── PhotoAnswerInput ─────────────────────────────────────────────
 // Replaces PartAnswerEditor for a student in a teacher's class — the
@@ -49,9 +43,7 @@ export default function PhotoAnswerInput({
     const newFiles = Array.from(fileList || [])
     if (newFiles.length === 0) return
     try {
-      const converted = await Promise.all(newFiles.map(async f => ({
-        data: await fileToBase64(f), mimeType: f.type,
-      })))
+      const converted = await Promise.all(newFiles.map(photoToBase64))
       // Photos accumulate across multiple picks; switching away from a
       // previously-attached PDF starts a fresh photo set instead of
       // mixing document types.
