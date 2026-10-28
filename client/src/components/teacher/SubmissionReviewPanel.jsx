@@ -26,7 +26,10 @@ const autoSize = (el) => {
 // assignment (assignment.format === 'file' — every submission needs
 // review, since there's no per-question auto-marking to check; the
 // teacher just reads the student's file and enters one overall mark).
-export default function SubmissionReviewPanel({ submissionId, onBack, onPublished }) {
+// Opened on a submission that isn't awaiting review (already published,
+// or instantly marked typed answers), it is read-only: marks are shown,
+// with the AI's original mark wherever the teacher changed it.
+export default function SubmissionReviewPanel({ submissionId, onBack, onPublished, backLabel = 'Back to review queue' }) {
   const [loading,   setLoading]   = useState(true)
   const [data,      setData]      = useState(null)
   const [overrides, setOverrides] = useState([]) // [{ marksAwarded, aiFeedback }] — question-based only
@@ -45,8 +48,9 @@ export default function SubmissionReviewPanel({ submissionId, onBack, onPublishe
         marksAwarded: a.marksAwarded ?? 0,
         aiFeedback:   a.aiFeedback || '',
       })))
-      setFileMarks(0)
-      setFileFeedback('')
+      const done = result.submission.status !== 'pending_review'
+      setFileMarks(done ? result.submission.totalMarks ?? 0 : 0)
+      setFileFeedback(done ? result.submission.teacherFeedback || '' : '')
     } catch (err) {
       toast.error(err.message)
       onBack()
@@ -80,6 +84,7 @@ export default function SubmissionReviewPanel({ submissionId, onBack, onPublishe
 
   const { submission, assignment } = data
   const isFileBased = assignment.format === 'file'
+  const readOnly = submission.status !== 'pending_review'
   const totalMarks = isFileBased
     ? Number(fileMarks) || 0
     : overrides.reduce((sum, o) => sum + (Number(o.marksAwarded) || 0), 0)
@@ -93,16 +98,19 @@ export default function SubmissionReviewPanel({ submissionId, onBack, onPublishe
         onClick={onBack}
         className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 transition-colors"
       >
-        <ArrowLeft className="w-4 h-4" /> Back to review queue
+        <ArrowLeft className="w-4 h-4" /> {backLabel}
       </button>
 
-      <div className="card bg-amber-50 border-amber-200 flex items-center justify-between flex-wrap gap-3">
+      <div className={`card flex items-center justify-between flex-wrap gap-3 ${readOnly ? 'bg-teal-50 border-teal-200' : 'bg-amber-50 border-amber-200'}`}>
         <div>
-          <p className="font-semibold text-amber-900">{assignment.title}</p>
-          <p className="text-sm text-amber-700">{submission.studentName} · {assignment.subject}</p>
+          <p className={`font-semibold ${readOnly ? 'text-teal-900' : 'text-amber-900'}`}>{assignment.title}</p>
+          <p className={`text-sm ${readOnly ? 'text-teal-700' : 'text-amber-700'}`}>
+            {submission.studentName} · {assignment.subject}
+            {readOnly && submission.submittedAt && ` · submitted ${new Date(submission.submittedAt).toLocaleDateString('en-GB')}`}
+          </p>
         </div>
-        <span className="badge-amber text-sm">
-          {totalMarks}/{availableMarks} marks {isFileBased ? '' : '(AI-suggested, editable below)'}
+        <span className={`text-sm ${readOnly ? 'badge-teal' : 'badge-amber'}`}>
+          {totalMarks}/{availableMarks} marks {readOnly ? '(marked)' : isFileBased ? '' : '(AI-suggested, editable below)'}
         </span>
       </div>
 
@@ -133,6 +141,7 @@ export default function SubmissionReviewPanel({ submissionId, onBack, onPublishe
                 type="number" min={0} max={submission.availableMarks}
                 value={fileMarks}
                 onChange={e => setFileMarks(e.target.value)}
+                disabled={readOnly}
                 className="input"
               />
             </div>
@@ -144,6 +153,7 @@ export default function SubmissionReviewPanel({ submissionId, onBack, onPublishe
                 onChange={e => setFileFeedback(e.target.value)}
                 rows={3}
                 placeholder="Optional comments on the student's work"
+                disabled={readOnly}
                 className="input resize-none overflow-hidden"
               />
             </div>
@@ -191,8 +201,12 @@ export default function SubmissionReviewPanel({ submissionId, onBack, onPublishe
                     type="number" min={0} max={q.marks}
                     value={overrides[idx]?.marksAwarded ?? 0}
                     onChange={e => updateOverride(idx, 'marksAwarded', e.target.value)}
+                    disabled={readOnly}
                     className="input"
                   />
+                  {answer?.aiMarksAwarded != null && Number(overrides[idx]?.marksAwarded) !== answer.aiMarksAwarded && (
+                    <p className="text-xs text-slate-400 mt-1">AI suggested {answer.aiMarksAwarded}</p>
+                  )}
                 </div>
                 <div>
                   <label className="label">Feedback</label>
@@ -201,6 +215,7 @@ export default function SubmissionReviewPanel({ submissionId, onBack, onPublishe
                     value={overrides[idx]?.aiFeedback ?? ''}
                     onChange={e => updateOverride(idx, 'aiFeedback', e.target.value)}
                     rows={2}
+                    disabled={readOnly}
                     className="input resize-none overflow-hidden"
                   />
                 </div>
@@ -210,7 +225,7 @@ export default function SubmissionReviewPanel({ submissionId, onBack, onPublishe
         })
       )}
 
-      <button
+      {!readOnly && <button
         onClick={handlePublish}
         disabled={publishing}
         className="btn-primary w-full py-3.5 text-base"
@@ -219,7 +234,7 @@ export default function SubmissionReviewPanel({ submissionId, onBack, onPublishe
           ? <><span className="spinner border-white/40 border-t-white" /> Publishing…</>
           : <>Publish results to student <Send className="w-4 h-4" /></>
         }
-      </button>
+      </button>}
     </div>
   )
 }

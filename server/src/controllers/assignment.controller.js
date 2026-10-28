@@ -307,6 +307,7 @@ export const submitSubmission = asyncHandler(async (req, res) => {
       studentAnswer,
       wasScanned,
       marksAwarded: result.marksAwarded || 0,
+      aiMarksAwarded: result.marksAwarded || 0,
       isCorrect:    result.isCorrect || false,
       aiFeedback:   result.overallFeedback || '',
       partResults:  result.partResults || [],

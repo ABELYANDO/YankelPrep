@@ -5,6 +5,9 @@ import mongoose from 'mongoose'
 const assignmentAnswerSchema = new mongoose.Schema({
   studentAnswer: { type: String, default: '' },
   marksAwarded:  { type: Number, default: null },
+  // The AI's own mark, kept unchanged when a teacher overrides
+  // marksAwarded during review — so AI and teacher marks can be compared.
+  aiMarksAwarded: { type: Number, default: null },
   isCorrect:     { type: Boolean, default: null },
   aiFeedback:    { type: String, default: '' },
   // Set when this answer came from a photo/PDF transcription rather

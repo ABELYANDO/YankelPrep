@@ -15,7 +15,7 @@ import {
   Users, Plus, Cpu, FileSearch, Type, Trash2,
   Copy, ClipboardList, ArrowRight, X, ClipboardCheck, Camera,
   AlertTriangle, Target, BookOpen, UserMinus, Pencil, UserPlus,
-  BarChart2, Megaphone, Download, Flame, Clock, FileText,
+  BarChart2, Megaphone, Download, Flame, Clock, FileText, Eye,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { getSubjectsForExamType, GHANAIAN_LANGUAGES } from '../../constants/subjects'
@@ -73,6 +73,9 @@ export default function TeacherPage() {
   const [editForm, setEditForm] = useState({ title: '', dueDate: '', releaseDate: '' })
   const [savingAssignment,  setSavingAssignment]  = useState(false)
   const [assigningNewIds,   setAssigningNewIds]   = useState([]) // assignment _ids currently running assign-new-students
+  const [openSubmissionsId, setOpenSubmissionsId] = useState(null) // assignment whose student list is shown
+  const [assignmentSubs,    setAssignmentSubs]    = useState([])
+  const [assignmentSubsLoading, setAssignmentSubsLoading] = useState(false)
 
   // ── Class analytics tab ─────────────────────────────────────
   const [analyticsClassId, setAnalyticsClassId] = useState('')
@@ -158,6 +161,29 @@ export default function TeacherPage() {
     } finally {
       setReviewsLoading(false)
     }
+  }
+
+  const toggleAssignmentSubmissions = async (assignmentId) => {
+    if (openSubmissionsId === assignmentId) return setOpenSubmissionsId(null)
+    setOpenSubmissionsId(assignmentId)
+    setAssignmentSubs([])
+    setAssignmentSubsLoading(true)
+    try {
+      const data = await teacherAPI.getAssignmentSubmissions(assignmentId)
+      setAssignmentSubs(data.submissions || [])
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setAssignmentSubsLoading(false)
+    }
+  }
+
+  // Opens one student's work in the Review tab; `from` lets its Back
+  // button return to the assignments list instead of the review queue.
+  const openSubmission = (submissionId) => {
+    setReviewing({ type: 'assignment', id: submissionId, from: 'classes' })
+    setOpenSubmissionsId(null) // statuses may change while it's open; reload on next expand
+    setTab('review')
   }
 
   const loadClasses = async () => {
@@ -782,6 +808,14 @@ export default function TeacherPage() {
                             )}
                             <span className="badge-blue text-xs">{a.submittedCount}/{a.totalStudents} submitted</span>
                             <button
+                              onClick={() => toggleAssignmentSubmissions(a._id)}
+                              className={`p-1.5 rounded-md transition-colors ${openSubmissionsId === a._id ? 'text-blue-600 bg-blue-50' : 'text-slate-300 hover:text-blue-600 hover:bg-blue-50'}`}
+                              aria-label={`View submissions for ${a.title}`}
+                              title="View students' work"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </button>
+                            <button
                               onClick={() => handleAssignToNewStudents(a)}
                               disabled={assigningNewIds.includes(a._id)}
                               className="p-1.5 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
@@ -810,6 +844,38 @@ export default function TeacherPage() {
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
+                        </div>
+                      )}
+                      {openSubmissionsId === a._id && (
+                        <div className="mt-3 border-t border-slate-100 pt-3 space-y-1.5">
+                          {assignmentSubsLoading && <p className="text-xs text-slate-400">Loading…</p>}
+                          {!assignmentSubsLoading && assignmentSubs.length === 0 && (
+                            <p className="text-xs text-slate-400">No students on this assignment.</p>
+                          )}
+                          {assignmentSubs.map(s => {
+                            const submitted = ['submitted', 'pending_review', 'marked'].includes(s.status)
+                            return (
+                              <div key={s.submissionId} className="flex items-center justify-between gap-3 text-sm">
+                                <span className="text-slate-700 truncate">{s.studentName}</span>
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                  {s.status === 'marked' && (
+                                    <span className="text-xs text-slate-500">{s.totalMarks}/{s.availableMarks} ({s.percent}%)</span>
+                                  )}
+                                  <span className={`text-xs ${s.status === 'pending_review' ? 'badge-amber' : s.status === 'marked' ? 'badge-teal' : 'badge-gray'}`}>
+                                    {s.status === 'pending_review' ? 'Awaiting review'
+                                      : s.status === 'marked' ? 'Marked'
+                                      : s.status === 'submitted' ? 'Submitted'
+                                      : s.status === 'in_progress' ? 'In progress' : 'Not started'}
+                                  </span>
+                                  {submitted && (
+                                    <button onClick={() => openSubmission(s.submissionId)} className="text-xs font-medium text-blue-600 hover:underline">
+                                      {s.status === 'pending_review' ? 'Review' : 'View'}
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          })}
                         </div>
                       )}
                     </div>
@@ -1074,8 +1140,9 @@ export default function TeacherPage() {
           reviewing?.type === 'assignment' ? (
             <SubmissionReviewPanel
               submissionId={reviewing.id}
-              onBack={() => setReviewing(null)}
-              onPublished={() => { setReviewing(null); loadPendingReviews() }}
+              backLabel={reviewing.from === 'classes' ? 'Back to my classes' : 'Back to review queue'}
+              onBack={() => { const from = reviewing.from; setReviewing(null); if (from) setTab(from) }}
+              onPublished={() => { const from = reviewing.from; setReviewing(null); from ? setTab(from) : loadPendingReviews() }}
             />
           ) : reviewing?.type === 'mockExam' ? (
             <MockExamReviewPanel

@@ -234,6 +234,35 @@ export const listAssignments = asyncHandler(async (req, res) => {
   res.json({ success: true, assignments: withCounts })
 })
 
+// ── GET /api/teacher/assignments/:id/submissions ─────────────────
+// Every student's submission for one assignment — unlike the review
+// queue, this includes work already marked, so the teacher can still
+// open it after publishing (or after instant marking of typed answers).
+export const listAssignmentSubmissions = asyncHandler(async (req, res) => {
+  const assignment = await Assignment.findOne({ _id: req.params.id, teacherId: req.user._id }).select('_id').lean()
+  if (!assignment) throw new AppError('Assignment not found', 404)
+
+  const submissions = await AssignmentSubmission.find({ assignmentId: assignment._id })
+    .select('studentId status totalMarks availableMarks percent submittedAt markedAt')
+    .populate('studentId', 'fullName')
+    .lean()
+
+  res.json({
+    success: true,
+    submissions: submissions
+      .map(s => ({
+        submissionId:   s._id,
+        studentName:    s.studentId?.fullName || 'Unknown student',
+        status:         s.status,
+        totalMarks:     s.totalMarks,
+        availableMarks: s.availableMarks,
+        percent:        s.percent,
+        submittedAt:    s.submittedAt,
+      }))
+      .sort((a, b) => a.studentName.localeCompare(b.studentName)),
+  })
+})
+
 // ── PUT /api/teacher/assignments/:id ─────────────────────────────
 // Title and due date only — the question set stays fixed once created
 // because AssignmentSubmission.answers is index-aligned to it; letting
@@ -607,6 +636,11 @@ export const getSubmissionForReview = asyncHandler(async (req, res) => {
       answers: submission.answers,
       submissionFiles: submission.submissionFiles,
       availableMarks: submission.availableMarks,
+      totalMarks: submission.totalMarks,
+      percent: submission.percent,
+      teacherFeedback: submission.teacherFeedback,
+      submittedAt: submission.submittedAt,
+      markedAt: submission.markedAt,
     },
     assignment: {
       title: assignment.title,
@@ -640,6 +674,11 @@ export const publishSubmission = asyncHandler(async (req, res) => {
     submission.totalMarks = Math.max(0, Math.min(Number(manualTotalMarks) || 0, submission.availableMarks))
     submission.teacherFeedback = teacherFeedback || ''
   } else {
+    // Submissions made before aiMarksAwarded existed: the marks stored
+    // now are still the AI's, so record them before any override.
+    submission.answers.forEach(a => {
+      if (a.aiMarksAwarded === null || a.aiMarksAwarded === undefined) a.aiMarksAwarded = a.marksAwarded
+    })
     if (Array.isArray(overrides)) {
       overrides.forEach((override, i) => {
         if (!override || !submission.answers[i]) return

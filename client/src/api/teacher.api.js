@@ -27,6 +27,7 @@ export const teacherAPI = {
   updateAssignment: (id, data) => api.put(`/teacher/assignments/${id}`, data),
   deleteAssignment: (id)      => api.delete(`/teacher/assignments/${id}`),
   assignToNewStudents: (id)   => api.post(`/teacher/assignments/${id}/assign-new-students`),
+  getAssignmentSubmissions: (id) => api.get(`/teacher/assignments/${id}/submissions`),
 
   // ── Struggling-topics view for one student, one subject ────────
   getStudentMastery: (studentId, subject) => api.get(`/teacher/students/${studentId}/mastery`, { params: { subject } }),

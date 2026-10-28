@@ -6,6 +6,7 @@ import {
   removeStudent,
   createAssignment,
   listAssignments,
+  listAssignmentSubmissions,
   updateAssignment,
   deleteAssignment,
   assignToNewStudents,
@@ -51,6 +52,7 @@ router.post('/extract-pdf',        extractFromPDF)
 // ── Assignments ──────────────────────────────────────────────────
 router.post('/assignments', createAssignment)
 router.get('/assignments',  listAssignments)
+router.get('/assignments/:id/submissions', listAssignmentSubmissions)
 router.put('/assignments/:id',    updateAssignment)
 router.delete('/assignments/:id', deleteAssignment)
 router.post('/assignments/:id/assign-new-students', assignToNewStudents)

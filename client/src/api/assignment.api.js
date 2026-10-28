@@ -9,7 +9,9 @@ export const assignmentAPI = {
   getAnnouncements: () => api.get('/assignments/announcements'),
   getPendingCount:  ()        => api.get('/assignments/pending-count'),
   getSubmission:    (submissionId) => api.get(`/assignments/${submissionId}`),
-  saveAnswer:       (submissionId, questionIndex, studentAnswer, wasScanned = false, scannedFiles = []) =>
+  // scannedFiles left undefined (typed edits) is omitted from the body, so
+  // the server keeps the pages already attached; [] explicitly clears them.
+  saveAnswer:       (submissionId, questionIndex, studentAnswer, wasScanned = false, scannedFiles) =>
     api.patch(`/assignments/${submissionId}/answer`, { questionIndex, studentAnswer, wasScanned, scannedFiles }),
   submit:           (submissionId) => api.post(`/assignments/${submissionId}/submit`),
   // PDF-handout assignments (format 'file') — send the student's whole
