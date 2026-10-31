@@ -13,8 +13,10 @@
 // Only answers whose stored mark is still the AI's own are eligible.
 // Teachers can override AI marks when they publish a reviewed mock exam
 // or assignment (publishMockExamReview / publishSubmission), and that
-// overwrite isn't flagged, so any mock exam or assignment containing a
-// scanned answer is excluded entirely. Practice answers are never
+// overwrite isn't flagged for mock exams, so any mock exam containing a
+// scanned answer is excluded entirely. Assignments store the AI's own
+// mark separately (aiMarksAwarded), so reviewed ones are kept and use
+// it; reviewed ones from before that field existed are excluded. Practice answers are never
 // teacher-reviewed, so they are all eligible — including scanned
 // (handwritten) ones, which gives the typed vs handwritten comparison.
 // MCQ answers are excluded: they're marked by exact key comparison.
@@ -151,15 +153,20 @@ const run = async () => {
   for (const sub of submissions) {
     const assignment = sub.assignmentId
     if (!assignment || assignment.format === 'file') continue
-    if (sub.answers.some(a => a.wasScanned)) continue // went through teacher review
+    // A teacher-reviewed submission is usable only if it kept the AI's
+    // own marks (aiMarksAwarded, stored since 28 Oct 2026); older reviewed
+    // ones may hold teacher overrides in marksAwarded, so they're skipped.
+    const reviewed = sub.answers.some(a => a.wasScanned)
+    if (reviewed && sub.answers.some(a => hasAnswer(a.studentAnswer) && !isMark(a.aiMarksAwarded))) continue
     assignment.questions.forEach((q, i) => {
       const a = sub.answers[i]
-      if (q.type !== 'Essay' || !a || !hasAnswer(a.studentAnswer) || !isMark(a.marksAwarded) || !(q.marks > 0)) return
+      const aiMark = isMark(a?.aiMarksAwarded) ? a.aiMarksAwarded : a?.marksAwarded
+      if (q.type !== 'Essay' || !a || !hasAnswer(a.studentAnswer) || !isMark(aiMark) || !(q.marks > 0)) return
       candidates.push({
         source: 'assignment', subject: assignment.subject, exam_type: assignment.examType, topic: q.topic,
         question: q.questionText, sub_parts: formatParts(q.parts), model_answer: q.modelAnswer || '',
-        max_marks: q.marks, student_answer: a.studentAnswer, ai_mark: a.marksAwarded,
-        input_type: 'typed',
+        max_marks: q.marks, student_answer: a.studentAnswer, ai_mark: aiMark,
+        input_type: a.wasScanned ? 'handwritten' : 'typed',
       })
     })
   }

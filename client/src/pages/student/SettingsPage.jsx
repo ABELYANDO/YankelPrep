@@ -55,6 +55,11 @@ export default function SettingsPage() {
   const [confirmPw, setConfirmPw] = useState('')
   const [pwError,   setPwError]   = useState('')
 
+  // ── Email form state ───────────────────────────────────────
+  const [email,     setEmail]     = useState('')
+  const [emailPw,   setEmailPw]   = useState('')
+  const emailChanged = profile && email.trim().toLowerCase() !== (profile.email || '')
+
   // ── Load profile ───────────────────────────────────────────
   useEffect(() => {
     const load = async () => {
@@ -63,6 +68,7 @@ export default function SettingsPage() {
         const p    = data.profile
         setProfile(p)
         setFullName(p.fullName || '')
+        setEmail(p.email       || '')
         setSchool(p.school    || '')
         setExamType(p.examType || 'WASSCE')
         setSubjects(p.subjects || [])
@@ -84,6 +90,25 @@ export default function SettingsPage() {
       updateUser({ fullName, school, examType, subjects })
       setProfile(prev => ({ ...prev, fullName, school, examType, subjects }))
       toast.success('Profile updated!')
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // ── Change email ───────────────────────────────────────────
+  const handleChangeEmail = async () => {
+    if (!email.trim()) return toast.error('Email cannot be empty')
+    if (!emailPw) return toast.error('Enter your current password to change your email')
+    setSaving(true)
+    try {
+      const data = await settingsAPI.changeEmail({ newEmail: email, currentPassword: emailPw })
+      updateUser({ email: data.email })
+      setProfile(prev => ({ ...prev, email: data.email }))
+      setEmail(data.email)
+      setEmailPw('')
+      toast.success('Email updated!')
     } catch (err) {
       toast.error(err.message)
     } finally {
@@ -236,13 +261,29 @@ export default function SettingsPage() {
               <label className="label">Email address</label>
               <input
                 type="email"
-                value={profile?.email || ''}
-                disabled
-                className="input bg-slate-50 text-slate-400 cursor-not-allowed"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                className="input"
               />
-              <p className="text-xs text-slate-400 mt-1">
-                Email address cannot be changed
-              </p>
+              {emailChanged && (
+                <div className="mt-3 space-y-3">
+                  <input
+                    type="password"
+                    value={emailPw}
+                    onChange={e => setEmailPw(e.target.value)}
+                    placeholder="Current password, to confirm the change"
+                    className="input"
+                  />
+                  <button
+                    onClick={handleChangeEmail}
+                    disabled={saving}
+                    className="btn-secondary w-full py-2.5"
+                  >
+                    Update email
+                  </button>
+                </div>
+              )}
             </div>
 
             <div>

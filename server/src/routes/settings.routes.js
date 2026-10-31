@@ -3,6 +3,7 @@ import {
   getProfile,
   updateProfile,
   changePassword,
+  changeEmail,
   getBadges,
   triggerBadgeCheck,
   refreshStreak,
@@ -17,6 +18,7 @@ router.use(protect)
 router.get('/profile',          getProfile)
 router.put('/profile',          updateProfile)
 router.put('/password',         changePassword)
+router.put('/email',            changeEmail)
 router.get('/badges',           getBadges)
 router.post('/badges/check',    triggerBadgeCheck)
 router.post('/streak/update',   refreshStreak)

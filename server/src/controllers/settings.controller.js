@@ -2,6 +2,7 @@ import User         from '../models/User.model.js'
 import ExamSchedule from '../models/ExamSchedule.model.js'
 import bcrypt  from 'bcryptjs'
 import { asyncHandler, AppError } from '../middleware/error.middleware.js'
+import { domainAcceptsMail, findDomainTypo } from '../utils/email.utils.js'
 import {
   getAllBadgesWithStatus,
   getBadgeDetails,
@@ -104,6 +105,53 @@ export const changePassword = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     message: 'Password changed successfully',
+  })
+})
+
+// ── PUT /api/settings/email ────────────────────────────────────
+// Changes the account's email after verifying the password. Applies the
+// same checks as registration (duplicate, typo of a known provider,
+// domain that can receive mail), since password reset depends on it.
+export const changeEmail = asyncHandler(async (req, res) => {
+  const { currentPassword } = req.body
+  // Same normalisation as auth.controller.js: non-strings become ''
+  const newEmail = typeof req.body.newEmail === 'string' ? req.body.newEmail.trim().toLowerCase() : ''
+
+  if (!newEmail || !currentPassword) {
+    throw new AppError('New email and current password are required', 400)
+  }
+
+  const user = await User.findById(req.user._id).select('+password')
+  if (!user) throw new AppError('User not found', 404)
+
+  if (newEmail === user.email) {
+    throw new AppError('New email must be different from the current one', 400)
+  }
+
+  // 400, not 401 — see changePassword
+  const isMatch = await bcrypt.compare(currentPassword, user.password)
+  if (!isMatch) throw new AppError('Current password is incorrect', 400)
+
+  if (await User.exists({ email: newEmail })) {
+    throw new AppError('Email already registered.', 409)
+  }
+
+  const typoOf = findDomainTypo(newEmail)
+  if (typoOf) {
+    throw new AppError(`Did you mean ${newEmail.split('@')[0]}@${typoOf}? Please check your email address.`, 400)
+  }
+
+  if (!(await domainAcceptsMail(newEmail))) {
+    throw new AppError("We couldn't verify that email's domain. Please check for typos.", 400)
+  }
+
+  user.email = newEmail
+  await user.save()
+
+  res.json({
+    success: true,
+    message: 'Email changed successfully',
+    email:   user.email,
   })
 })
 
